@@ -7,6 +7,19 @@ import argparse
 
 
 class FuzzyFinder:
+    KEYBINDINGS = {
+        "toggle_ignore": "alt-i",
+        "toggle_hidden": "alt-u",
+        "switch_files": "ctrl-f",
+        "switch_grep": "ctrl-g",
+        "switch_commits": "ctrl-h",
+        "switch_status": "ctrl-s",
+        "list_up": "ctrl-u",
+        "list_down": "ctrl-d",
+        "preview_up": "ctrl-b",
+        "preview_down": "ctrl-f",
+    }
+
     def __init__(self):
         self.check_dependencies()
         self.workspace_root = self.find_workspace_root()
@@ -86,13 +99,21 @@ class FuzzyFinder:
                 "--prompt",
                 "Files> ",
                 "--bind",
-                f"ctrl-i:{toggle_ignore}",
+                f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
                 "--bind",
-                f"ctrl-y:{toggle_hidden}",
+                f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
+                "--bind",
+                f"{self.KEYBINDINGS['list_up']}:up",
+                "--bind",
+                f"{self.KEYBINDINGS['list_down']}:down",
+                "--bind",
+                f"{self.KEYBINDINGS['preview_up']}:preview-up",
+                "--bind",
+                f"{self.KEYBINDINGS['preview_down']}:preview-down",
                 "--header",
-                "CTRL-I: Toggle Ignore | CTRL-Y: Toggle Hidden | CTRL-G: Live Grep | CTRL-H: Commits | CTRL-S: Status",
+                f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Toggle Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Toggle Hidden | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
                 "--expect",
-                "ctrl-g,ctrl-h,ctrl-s",
+                f"{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
             ]
 
             rg_process = subprocess.Popen(
@@ -113,11 +134,11 @@ class FuzzyFinder:
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
 
-                if key == "ctrl-g":
+                if key == self.KEYBINDINGS["switch_grep"]:
                     return "switch", "grep"
-                elif key == "ctrl-h":
+                elif key == self.KEYBINDINGS["switch_commits"]:
                     return "switch", "commits"
-                elif key == "ctrl-s":
+                elif key == self.KEYBINDINGS["switch_status"]:
                     return "switch", "status"
                 elif selection:
                     return "open", selection
@@ -184,9 +205,17 @@ class FuzzyFinder:
             "--bind",
             'start:reload:echo "Type to search..."',
             "--bind",
-            f"ctrl-i:{toggle_ignore}",
+            f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
             "--bind",
-            f"ctrl-y:{toggle_hidden}",
+            f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
+            "--bind",
+            f"{self.KEYBINDINGS['list_up']}:up",
+            "--bind",
+            f"{self.KEYBINDINGS['list_down']}:down",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-down",
             "--preview",
             preview_cmd,
             "--preview-window",
@@ -198,9 +227,9 @@ class FuzzyFinder:
             "--prompt",
             "Grep> ",
             "--header",
-            "CTRL-I: Toggle Ignore | CTRL-Y: Toggle Hidden | CTRL-F: Files | CTRL-H: Commits | CTRL-S: Status",
+            f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Toggle Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Toggle Hidden | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
             "--expect",
-            "ctrl-f,ctrl-h,ctrl-s",
+            f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
         ]
 
         try:
@@ -215,11 +244,11 @@ class FuzzyFinder:
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
 
-                if key == "ctrl-f":
+                if key == self.KEYBINDINGS["switch_files"]:
                     return "switch", "files"
-                elif key == "ctrl-h":
+                elif key == self.KEYBINDINGS["switch_commits"]:
                     return "switch", "commits"
-                elif key == "ctrl-s":
+                elif key == self.KEYBINDINGS["switch_status"]:
                     return "switch", "status"
                 elif selection:
                     parts = selection.split(":")
@@ -260,10 +289,18 @@ class FuzzyFinder:
             "--border",
             "--prompt",
             "Commits> ",
+            "--bind",
+            f"{self.KEYBINDINGS['list_up']}:up",
+            "--bind",
+            f"{self.KEYBINDINGS['list_down']}:down",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-down",
             "--header",
-            "CTRL-F: Files | CTRL-G: Live Grep | CTRL-S: Status | Enter: Copy Hash",
+            f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_status'].upper()}: Status | Enter: Copy Hash",
             "--expect",
-            "ctrl-f,ctrl-g,ctrl-s",
+            f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_status']}",
         ]
 
         try:
@@ -283,11 +320,11 @@ class FuzzyFinder:
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
 
-                if key == "ctrl-f":
+                if key == self.KEYBINDINGS["switch_files"]:
                     return "switch", "files"
-                elif key == "ctrl-g":
+                elif key == self.KEYBINDINGS["switch_grep"]:
                     return "switch", "grep"
-                elif key == "ctrl-s":
+                elif key == self.KEYBINDINGS["switch_status"]:
                     return "switch", "status"
                 elif selection:
                     # Extract hash (first word)
@@ -308,7 +345,7 @@ class FuzzyFinder:
         """
         # Git status command
         # -s: short format
-        git_cmd = "git status -s --color=always"
+        git_cmd = "git status -s"
 
         # Preview command
         # We need to extract filename from status line.
@@ -329,10 +366,18 @@ class FuzzyFinder:
             "--border",
             "--prompt",
             "Status> ",
+            "--bind",
+            f"{self.KEYBINDINGS['list_up']}:up",
+            "--bind",
+            f"{self.KEYBINDINGS['list_down']}:down",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-down",
             "--header",
-            "CTRL-F: Files | CTRL-G: Live Grep | CTRL-H: Commits",
+            f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits",
             "--expect",
-            "ctrl-f,ctrl-g,ctrl-h",
+            f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_commits']}",
         ]
 
         try:
@@ -352,11 +397,11 @@ class FuzzyFinder:
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
 
-                if key == "ctrl-f":
+                if key == self.KEYBINDINGS["switch_files"]:
                     return "switch", "files"
-                elif key == "ctrl-g":
+                elif key == self.KEYBINDINGS["switch_grep"]:
                     return "switch", "grep"
-                elif key == "ctrl-h":
+                elif key == self.KEYBINDINGS["switch_commits"]:
                     return "switch", "commits"
                 elif selection:
                     # Extract filename.
