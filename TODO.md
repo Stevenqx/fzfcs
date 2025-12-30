@@ -20,6 +20,8 @@
 - [x] Provide more functions.
 - [x] Create a shortcut for toggling ignore hidden files.
 - [x] Create autocompletion for zsh/fish.
+- [x] Full window when opening fzf.
+- [x] When in vscode, keep the terminal open after opening a file.
 
 ## Bugs to Fix
 - [x] Bat reports "invalid digits found in string" in grep mode.

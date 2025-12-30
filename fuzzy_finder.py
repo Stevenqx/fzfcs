@@ -80,7 +80,7 @@ class FuzzyFinder:
                 "--preview",
                 preview_cmd,
                 "--height",
-                "80%",
+                "100%",
                 "--layout=reverse",
                 "--border",
                 "--prompt",
@@ -192,7 +192,7 @@ class FuzzyFinder:
             "--preview-window",
             "up,60%,border-bottom,+{2}+3/3,~3",
             "--height",
-            "80%",
+            "100%",
             "--layout=reverse",
             "--border",
             "--prompt",
@@ -255,7 +255,7 @@ class FuzzyFinder:
             "--preview",
             preview_cmd,
             "--height",
-            "80%",
+            "100%",
             "--layout=reverse",
             "--border",
             "--prompt",
@@ -324,7 +324,7 @@ class FuzzyFinder:
             "--preview",
             preview_cmd,
             "--height",
-            "80%",
+            "100%",
             "--layout=reverse",
             "--border",
             "--prompt",
@@ -475,7 +475,10 @@ _fuzzy_finder_zsh() {
                     self.open_file(data[0], data[1])
                 else:
                     self.open_file(data)
-                break
+
+                # Keep running if in VSCode
+                if os.environ.get("TERM_PROGRAM") != "vscode":
+                    break
             elif action == "copy":
                 # Try to copy to clipboard (Linux/Mac)
                 try:
