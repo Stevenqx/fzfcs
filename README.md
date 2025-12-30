@@ -32,6 +32,7 @@ Run the script directly:
 - `files` (default): Search for files by name.
 - `grep`: Search for text within files.
 - `commits`: Search git commits.
+- `status`: Search changed files (git status).
 
 ### Examples
 
@@ -52,21 +53,33 @@ Search commits:
 ./fuzzy_finder.py commits
 ```
 
+Search changed files:
+```bash
+./fuzzy_finder.py status
+```
+
 ### Key Bindings
 
 | Mode | Key | Action |
 |------|-----|--------|
-| Find Files | `CTRL-I` | Include ignored files (reload) |
-| Find Files | `CTRL-X` | Exclude ignored files (reload) |
+| Find Files | `CTRL-I` | Toggle Ignore (reload) |
+| Find Files | `CTRL-Y` | Toggle Hidden (reload) |
 | Find Files | `CTRL-G` | Switch to Live Grep |
 | Find Files | `CTRL-H` | Switch to Commits |
-| Live Grep | `CTRL-I` | Toggle ignored files |
+| Find Files | `CTRL-S` | Switch to Status |
+| Live Grep | `CTRL-I` | Toggle Ignore |
+| Live Grep | `CTRL-Y` | Toggle Hidden |
 | Live Grep | `CTRL-F` | Switch to Find Files |
 | Live Grep | `CTRL-H` | Switch to Commits |
+| Live Grep | `CTRL-S` | Switch to Status |
 | Commits | `CTRL-F` | Switch to Find Files |
 | Commits | `CTRL-G` | Switch to Live Grep |
+| Commits | `CTRL-S` | Switch to Status |
 | Commits | `Enter` | Copy commit hash to clipboard |
-| All | `Enter` | Open selected file (Files/Grep) |
+| Status | `CTRL-F` | Switch to Find Files |
+| Status | `CTRL-G` | Switch to Live Grep |
+| Status | `CTRL-H` | Switch to Commits |
+| All | `Enter` | Open selected file (Files/Grep/Status) |
 | All | `Esc` | Cancel |
 
 ## Installation

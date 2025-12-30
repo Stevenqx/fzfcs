@@ -17,3 +17,10 @@
 - [x] Command line argument parsing for initial mode selection.
 - [x] Support for other resources (git commits, etc.).
 - [x] Auto-completion support.
+- [x] Provide more functions.
+- [x] Create a shortcut for toggling ignore hidden files.
+- [x] Create autocompletion for zsh/fish.
+
+## Bugs to Fix
+- [x] Bat reports "invalid digits found in string" in grep mode.
+- [x] Bat preview has low visibility for light background.

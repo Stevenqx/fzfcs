@@ -10,6 +10,8 @@ class FuzzyFinder:
     def __init__(self):
         self.check_dependencies()
         self.workspace_root = self.find_workspace_root()
+        if self.workspace_root:
+            os.chdir(self.workspace_root)
 
     def check_dependencies(self):
         required_tools = ["fzf", "rg", "bat"]
@@ -33,19 +35,41 @@ class FuzzyFinder:
         Search files in the current repository.
         Returns: (action, data)
         """
+        # State files
+        import tempfile
+        tf = tempfile.NamedTemporaryFile(delete=False)
+        base_state = tf.name
+        tf.close()
+        os.remove(base_state)
+        
+        state_hidden = base_state + "_hidden"
+        state_no_ignore = base_state + "_no_ignore"
+        
+        # Default: Show hidden (create file), Respect ignore (no file)
+        open(state_hidden, 'w').close()
+        if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
+        
         # Base rg command parts
-        rg_base = "rg --files --hidden --glob '!.git'"
+        # We construct the command dynamically based on state files
+        rg_cmd = f"""
+            FLAGS=""
+            if [ -f {state_hidden} ]; then FLAGS="$FLAGS --hidden"; fi
+            if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
+            rg --files $FLAGS --glob '!.git'
+        """
         
-        # Preview command
-        preview_cmd = "bat --style=numbers --color=always --line-range :500 {}"
+        # Preview command (suppress stderr for invalid digits bug)
+        preview_cmd = "bat --style=numbers --color=always --line-range :500 {} 2> /dev/null"
         
-        # Reload commands
-        reload_default = f"reload({rg_base})+change-prompt(Files> )"
-        reload_no_ignore = f"reload({rg_base} --no-ignore)+change-prompt(All Files> )"
+        # Toggle commands
+        toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({rg_cmd})"
+        toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({rg_cmd})"
         
         try:
             # Initial command
-            initial_cmd = rg_base
+            # We need to run the shell command to get initial output
+            # But subprocess.Popen needs a string for shell=True
+            initial_cmd = f"bash -c '{rg_cmd}'"
             
             fzf_cmd = [
                 "fzf",
@@ -58,13 +82,13 @@ class FuzzyFinder:
                 "--prompt",
                 "Files> ",
                 "--bind",
-                f"ctrl-i:{reload_no_ignore}",
+                f"ctrl-i:{toggle_ignore}",
                 "--bind",
-                f"ctrl-x:{reload_default}",
+                f"ctrl-y:{toggle_hidden}",
                 "--header",
-                "CTRL-I: Include ignored | CTRL-X: Exclude ignored | CTRL-G: Live Grep | CTRL-H: Commits",
+                "CTRL-I: Toggle Ignore | CTRL-Y: Toggle Hidden | CTRL-G: Live Grep | CTRL-H: Commits | CTRL-S: Status",
                 "--expect",
-                "ctrl-g,ctrl-h",
+                "ctrl-g,ctrl-h,ctrl-s",
             ]
             
             rg_process = subprocess.Popen(initial_cmd, shell=True, stdout=subprocess.PIPE)
@@ -85,6 +109,8 @@ class FuzzyFinder:
                     return "switch", "grep"
                 elif key == "ctrl-h":
                     return "switch", "commits"
+                elif key == "ctrl-s":
+                    return "switch", "status"
                 elif selection:
                     return "open", selection
             
@@ -92,6 +118,9 @@ class FuzzyFinder:
             pass
         except Exception as e:
             print(f"Error: {e}")
+        finally:
+            if os.path.exists(state_hidden): os.remove(state_hidden)
+            if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
             
         return "exit", None
 
@@ -100,23 +129,36 @@ class FuzzyFinder:
         Search for text within files.
         Returns: (action, data)
         """
-        # State file for ignore toggle
+        # State files
         import tempfile
-
-        # Create a temp file to get a unique name, then close and remove it
         tf = tempfile.NamedTemporaryFile(delete=False)
-        state_file = tf.name
+        base_state = tf.name
         tf.close()
-        os.remove(state_file)
+        os.remove(base_state)
+        
+        state_hidden = base_state + "_hidden"
+        state_no_ignore = base_state + "_no_ignore"
+        
+        # Default: Hide hidden (no file), Respect ignore (no file) - Standard grep behavior
+        # But user might want to toggle hidden.
+        if os.path.exists(state_hidden): os.remove(state_hidden)
+        if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
 
         # Command to check state and run rg
-        rg_cmd_template = "rg --column --line-number --no-heading --color=always --smart-case {ignore_flag} {{q}} || true"
-        shell_cmd = f"if [ -f {state_file} ]; then {rg_cmd_template.format(ignore_flag='--no-ignore')}; else {rg_cmd_template.format(ignore_flag='')}; fi"
+        rg_cmd_template = "rg --column --line-number --no-heading --color=always --smart-case {flags} {{q}} || true"
         
-        preview_cmd = "bat --style=numbers --color=always --highlight-line {2} {1}"
+        shell_cmd = f"""
+            FLAGS=""
+            if [ -f {state_hidden} ]; then FLAGS="$FLAGS --hidden"; fi
+            if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
+            {rg_cmd_template.format(flags="$FLAGS")}
+        """
         
-        # Toggle command: touch/rm file and trigger reload
-        toggle_cmd = f"execute(if [ -f {state_file} ]; then rm {state_file}; else touch {state_file}; fi)+reload({shell_cmd})"
+        preview_cmd = "bat --style=numbers --color=always --highlight-line {2} {1} 2> /dev/null"
+        
+        # Toggle commands
+        toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({shell_cmd})"
+        toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({shell_cmd})"
         
         fzf_cmd = [
             "fzf",
@@ -127,7 +169,9 @@ class FuzzyFinder:
             "--bind",
             'start:reload:echo "Type to search..."',
             "--bind",
-            f"ctrl-i:{toggle_cmd}",
+            f"ctrl-i:{toggle_ignore}",
+            "--bind",
+            f"ctrl-y:{toggle_hidden}",
             "--preview",
             preview_cmd,
             "--preview-window",
@@ -139,9 +183,9 @@ class FuzzyFinder:
             "--prompt",
             "Grep> ",
             "--header",
-            "CTRL-I: Toggle ignored | CTRL-F: Files | CTRL-H: Commits",
+            "CTRL-I: Toggle Ignore | CTRL-Y: Toggle Hidden | CTRL-F: Files | CTRL-H: Commits | CTRL-S: Status",
             "--expect",
-            "ctrl-f,ctrl-h",
+            "ctrl-f,ctrl-h,ctrl-s",
         ]
         
         try:
@@ -160,6 +204,8 @@ class FuzzyFinder:
                     return "switch", "files"
                 elif key == "ctrl-h":
                     return "switch", "commits"
+                elif key == "ctrl-s":
+                    return "switch", "status"
                 elif selection:
                     parts = selection.split(":")
                     if len(parts) >= 2:
@@ -170,8 +216,8 @@ class FuzzyFinder:
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            if os.path.exists(state_file):
-                os.remove(state_file)
+            if os.path.exists(state_hidden): os.remove(state_hidden)
+            if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
                 
         return "exit", None
 
@@ -184,7 +230,7 @@ class FuzzyFinder:
         git_cmd = "git log --oneline --color=always"
         
         # Preview command
-        preview_cmd = "git show {1} --color=always | bat --color=always --style=numbers"
+        preview_cmd = "git show {1} --color=always | bat --color=always --style=numbers 2> /dev/null"
         
         fzf_cmd = [
             "fzf",
@@ -198,9 +244,9 @@ class FuzzyFinder:
             "--prompt",
             "Commits> ",
             "--header",
-            "CTRL-F: Files | CTRL-G: Live Grep | Enter: Copy Hash",
+            "CTRL-F: Files | CTRL-G: Live Grep | CTRL-S: Status | Enter: Copy Hash",
             "--expect",
-            "ctrl-f,ctrl-g",
+            "ctrl-f,ctrl-g,ctrl-s",
         ]
         
         try:
@@ -222,10 +268,85 @@ class FuzzyFinder:
                     return "switch", "files"
                 elif key == "ctrl-g":
                     return "switch", "grep"
+                elif key == "ctrl-s":
+                    return "switch", "status"
                 elif selection:
                     # Extract hash (first word)
                     commit_hash = selection.split()[0]
                     return "copy", commit_hash
+                    
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"Error: {e}")
+            
+        return "exit", None
+
+    def git_status(self):
+        """
+        Search changed files (git status).
+        Returns: (action, data)
+        """
+        # Git status command
+        # -s: short format
+        git_cmd = "git status -s --color=always"
+        
+        # Preview command
+        # We need to extract filename from status line.
+        # Status line: " M file.py" or "?? file.py"
+        # {2} usually works if there are 2 columns.
+        # But sometimes filenames have spaces.
+        # Let's try to use {2..}
+        preview_cmd = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2> /dev/null"
+        
+        fzf_cmd = [
+            "fzf",
+            "--ansi",
+            "--preview",
+            preview_cmd,
+            "--height",
+            "80%",
+            "--layout=reverse",
+            "--border",
+            "--prompt",
+            "Status> ",
+            "--header",
+            "CTRL-F: Files | CTRL-G: Live Grep | CTRL-H: Commits",
+            "--expect",
+            "ctrl-f,ctrl-g,ctrl-h",
+        ]
+        
+        try:
+            git_process = subprocess.Popen(git_cmd, shell=True, stdout=subprocess.PIPE)
+            fzf_process = subprocess.Popen(fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE)
+            git_process.stdout.close()
+            
+            output, _ = fzf_process.communicate()
+            
+            if fzf_process.returncode == 0 and output:
+                lines = output.decode("utf-8").strip().split("\n")
+                if not lines:
+                    return "exit", None
+                
+                key = lines[0]
+                selection = lines[1] if len(lines) > 1 else None
+                
+                if key == "ctrl-f":
+                    return "switch", "files"
+                elif key == "ctrl-g":
+                    return "switch", "grep"
+                elif key == "ctrl-h":
+                    return "switch", "commits"
+                elif selection:
+                    # Extract filename.
+                    # Format: XY Path
+                    # XY is 2 chars, then space, then path.
+                    # But sometimes there are arrows for renames.
+                    # For simplicity, let's take the last part or everything after index 3.
+                    parts = selection.strip().split()
+                    if len(parts) >= 2:
+                        filename = parts[-1] # Simple case
+                        return "open", filename
                     
         except KeyboardInterrupt:
             pass
@@ -269,7 +390,7 @@ _fuzzy_finder_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="files grep commits"
+    opts="files grep commits status"
 
     if [[ ${cur} == * ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -277,6 +398,18 @@ _fuzzy_finder_completion() {
     fi
 }
 complete -F _fuzzy_finder_completion fuzzy_finder.py
+
+# Zsh completion
+# autoload -U +X compinit && compinit
+# compdef _fuzzy_finder_zsh fuzzy_finder.py
+_fuzzy_finder_zsh() {
+    local -a opts
+    opts=('files' 'grep' 'commits' 'status')
+    _describe 'command' opts
+}
+
+# Fish completion
+# complete -c fuzzy_finder.py -f -a "files grep commits status"
 """
         print(script)
 
@@ -285,9 +418,9 @@ complete -F _fuzzy_finder_completion fuzzy_finder.py
         parser.add_argument(
             "mode",
             nargs="?",
-            choices=["files", "grep", "commits"],
+            choices=["files", "grep", "commits", "status"],
             default="files",
-            help="Mode: files (default), grep, or commits",
+            help="Mode: files (default), grep, commits, or status",
         )
         parser.add_argument(
             "--completion",
@@ -309,6 +442,8 @@ complete -F _fuzzy_finder_completion fuzzy_finder.py
                 action, data = self.live_grep()
             elif current_mode == "commits":
                 action, data = self.git_commits()
+            elif current_mode == "status":
+                action, data = self.git_status()
             else:
                 break
                 
