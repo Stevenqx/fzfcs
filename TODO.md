@@ -23,13 +23,14 @@
 - [x] Full window when opening fzf.
 - [x] When in VSCode, keep the search session open after opening a file.
 - [x] Add a keybinding dict at the beginning of the script to allow easy remapping of keys.
-- [ ] Add keymaps to scroll list up/down half screen. (Ctrl+U/Ctrl+D)
-- [ ] Add keymaps to scroll preview up/down half screen. (Ctrl+B/Ctrl+F)
+- [x] Change keymaps to scroll list up/down half screen instead of list up/down. (Ctrl+U/Ctrl+D)
+- [x] Change keymaps to scroll preview up/down half screen instead of preview up/down. (Ctrl+B/Ctrl+F)
+- [x] Try to use better way to switch ignore/hidden mode.
 
 ## Bugs to Fix
 - [x] Bat reports "invalid digits found in string" in grep mode.
 - [x] Bat preview has low visibility for light background.
 - [x] Cannot open files or copy commit hash.
-- [ ] Bat preview does not display in grep mode.
-- [ ] When there is no any result (e.g., in status mode but no changes), can't switch mode.
-- [ ] Toggle ignore/hidden command may fail.
+- [x] Bat preview does not display in grep mode.
+- [x] When there is no any result (e.g., in status mode but no changes), can't switch mode.
+- [x] Toggle ignore/hidden command may fail.

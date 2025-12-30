@@ -18,6 +18,7 @@ class FuzzyFinder:
         "list_down": "ctrl-d",
         "preview_up": "ctrl-b",
         "preview_down": "ctrl-f",
+        "toggle_mode_rg_fzf": "ctrl-t",
     }
 
     def __init__(self):
@@ -48,46 +49,35 @@ class FuzzyFinder:
         Search files in the current repository.
         Returns: (action, data)
         """
-        # State files
-        import tempfile
-
-        tf = tempfile.NamedTemporaryFile(delete=False)
-        base_state = tf.name
-        tf.close()
-        os.remove(base_state)
-
-        state_hidden = base_state + "_hidden"
-        state_no_ignore = base_state + "_no_ignore"
-
-        # Default: Show hidden (create file), Respect ignore (no file)
-        open(state_hidden, "w").close()
-        if os.path.exists(state_no_ignore):
-            os.remove(state_no_ignore)
-
-        # Base rg command parts
-        # We construct the command dynamically based on state files
-        rg_cmd = f"""
-            FLAGS=""
-            if [ -f {state_hidden} ]; then FLAGS="$FLAGS --hidden"; fi
-            if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
-            rg --files $FLAGS --glob '!.git'
-        """
-
         # Preview command (suppress stderr for invalid digits bug)
         preview_cmd = (
             "bat --style=numbers --color=always --line-range :500 {} 2> /dev/null"
         )
 
-        # Toggle commands
-        toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({rg_cmd})"
-        toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({rg_cmd})"
+        # Use prompt to store state: [H][I] = Hidden, Ignore flags
+        # Default: Show hidden, Respect gitignore
+        # Prompt format: "Files [H]> " means hidden enabled, ignore respected
+        # "Files [H][I]> " means hidden enabled, no-ignore enabled
+
+        # Build rg command based on prompt state
+        rg_cmd_template = """
+            FLAGS="--glob=!.git"
+            [[ "$FZF_PROMPT" == *"[H]"* ]] && FLAGS="$FLAGS --hidden"
+            [[ "$FZF_PROMPT" == *"[I]"* ]] && FLAGS="$FLAGS --no-ignore"
+            rg --files $FLAGS
+        """
+
+        # Toggle hidden using transform action
+        toggle_hidden = f"""transform:[[ "$FZF_PROMPT" == *"[H]"* ]] && \
+            echo "change-prompt(Files> )+reload({rg_cmd_template})" || \
+            echo "change-prompt(Files [H]> )+reload({rg_cmd_template})" """
+
+        # Toggle ignore using transform action
+        toggle_ignore = f"""transform:[[ "$FZF_PROMPT" == *"[I]"* ]] && \
+            echo "change-prompt(${{FZF_PROMPT/\\[I\\]/}})+reload({rg_cmd_template})" || \
+            echo "change-prompt(${{FZF_PROMPT/> /[I]> }})+reload({rg_cmd_template})" """
 
         try:
-            # Initial command
-            # We need to run the shell command to get initial output
-            # But subprocess.Popen needs a string for shell=True
-            initial_cmd = f"bash -c '{rg_cmd}'"
-
             fzf_cmd = [
                 "fzf",
                 "--preview",
@@ -97,61 +87,50 @@ class FuzzyFinder:
                 "--layout=reverse",
                 "--border",
                 "--prompt",
-                "Files> ",
+                "Files [H]> ",
+                "--bind",
+                f"start:reload:{rg_cmd_template}",
                 "--bind",
                 f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
                 "--bind",
                 f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
                 "--bind",
-                f"{self.KEYBINDINGS['list_up']}:up",
+                f"{self.KEYBINDINGS['list_up']}:half-page-up",
                 "--bind",
-                f"{self.KEYBINDINGS['list_down']}:down",
+                f"{self.KEYBINDINGS['list_down']}:half-page-down",
                 "--bind",
-                f"{self.KEYBINDINGS['preview_up']}:preview-up",
+                f"{self.KEYBINDINGS['preview_up']}:preview-half-page-up",
                 "--bind",
-                f"{self.KEYBINDINGS['preview_down']}:preview-down",
+                f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
                 "--header",
                 f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Toggle Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Toggle Hidden | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
                 "--expect",
                 f"{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
             ]
 
-            rg_process = subprocess.Popen(
-                initial_cmd, shell=True, stdout=subprocess.PIPE
-            )
-            fzf_process = subprocess.Popen(
-                fzf_cmd, stdin=rg_process.stdout, stdout=subprocess.PIPE
-            )
-            rg_process.stdout.close()
-
+            fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            if fzf_process.returncode == 0 and output:
+            # Handle expect keys even when fzf exits with non-zero (e.g., no selection)
+            if output:
                 lines = output.decode("utf-8").splitlines()
-                if not lines:
-                    return "exit", None
+                if lines:
+                    key = lines[0]
+                    selection = lines[1] if len(lines) > 1 else None
 
-                key = lines[0]
-                selection = lines[1] if len(lines) > 1 else None
-
-                if key == self.KEYBINDINGS["switch_grep"]:
-                    return "switch", "grep"
-                elif key == self.KEYBINDINGS["switch_commits"]:
-                    return "switch", "commits"
-                elif key == self.KEYBINDINGS["switch_status"]:
-                    return "switch", "status"
-                elif selection:
-                    return "open", selection
+                    if key == self.KEYBINDINGS["switch_grep"]:
+                        return "switch", "grep"
+                    elif key == self.KEYBINDINGS["switch_commits"]:
+                        return "switch", "commits"
+                    elif key == self.KEYBINDINGS["switch_status"]:
+                        return "switch", "status"
+                    elif selection and fzf_process.returncode == 0:
+                        return "open", selection
 
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
-        finally:
-            if os.path.exists(state_hidden):
-                os.remove(state_hidden)
-            if os.path.exists(state_no_ignore):
-                os.remove(state_no_ignore)
 
         return "exit", None
 
@@ -160,62 +139,72 @@ class FuzzyFinder:
         Search for text within files.
         Returns: (action, data)
         """
-        # State files
         import tempfile
 
-        tf = tempfile.NamedTemporaryFile(delete=False)
-        base_state = tf.name
+        # Create temp files for query state when switching between rg/fzf modes
+        tf = tempfile.NamedTemporaryFile(delete=False, prefix="fzf_rg_")
+        rg_query_file = tf.name
         tf.close()
-        os.remove(base_state)
+        tf = tempfile.NamedTemporaryFile(delete=False, prefix="fzf_fzf_")
+        fzf_query_file = tf.name
+        tf.close()
 
-        state_hidden = base_state + "_hidden"
-        state_no_ignore = base_state + "_no_ignore"
+        # Use prompt to store state for hidden/ignore
+        # Prompt format: "1. ripgrep [H]> " = hidden enabled in ripgrep mode
+        rg_prefix = "rg --column --line-number --no-heading --color=always --smart-case"
 
-        # Default: Hide hidden (no file), Respect ignore (no file) - Standard grep behavior
-        # But user might want to toggle hidden.
-        if os.path.exists(state_hidden):
-            os.remove(state_hidden)
-        if os.path.exists(state_no_ignore):
-            os.remove(state_no_ignore)
-
-        # Command to check state and run rg
-        rg_cmd_template = "rg --column --line-number --no-heading --color=always --smart-case {flags} {{q}} || true"
-
-        shell_cmd = f"""
+        # Build rg command based on prompt state
+        rg_cmd = f"""
             FLAGS=""
-            if [ -f {state_hidden} ]; then FLAGS="$FLAGS --hidden"; fi
-            if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
-            {rg_cmd_template.format(flags="$FLAGS")}
+            [[ "$FZF_PROMPT" == *"[H]"* ]] && FLAGS="$FLAGS --hidden"
+            [[ "$FZF_PROMPT" == *"[I]"* ]] && FLAGS="$FLAGS --no-ignore"
+            {rg_prefix} $FLAGS {{q}} || true
         """
 
-        preview_cmd = (
-            "bat --style=numbers --color=always --highlight-line {2} {1} 2> /dev/null"
-        )
+        # Preview command using delimiter to extract file and line
+        preview_cmd = "bat --color=always --highlight-line {2} {1} 2>/dev/null"
 
-        # Toggle commands
-        toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({shell_cmd})"
-        toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({shell_cmd})"
+        # Toggle hidden using transform
+        toggle_hidden = f"""transform:[[ "$FZF_PROMPT" == *"[H]"* ]] && \
+            echo "change-prompt(${{FZF_PROMPT/\\[H\\]/}})+reload({rg_cmd})" || \
+            echo "change-prompt(${{FZF_PROMPT/ >/ [H]>}})+reload({rg_cmd})" """
+
+        # Toggle ignore using transform
+        toggle_ignore = f"""transform:[[ "$FZF_PROMPT" == *"[I]"* ]] && \
+            echo "change-prompt(${{FZF_PROMPT/\\[I\\]/}})+reload({rg_cmd})" || \
+            echo "change-prompt(${{FZF_PROMPT/ >/ [I]>}})+reload({rg_cmd})" """
+
+        # Switch between ripgrep mode and fzf mode using transform
+        switch_mode = f"""transform:[[ ! "$FZF_PROMPT" =~ ripgrep ]] && \
+            echo "rebind(change)+change-prompt(1. ripgrep >)+disable-search+transform-query:echo {{q}} > {fzf_query_file}; cat {rg_query_file}" || \
+            echo "unbind(change)+change-prompt(2. fzf >)+enable-search+transform-query:echo {{q}} > {rg_query_file}; cat {fzf_query_file}" """
 
         fzf_cmd = [
             "fzf",
             "--ansi",
             "--disabled",
+            "--query",
+            "",
             "--bind",
-            f"change:reload:{shell_cmd}",
+            f"start:reload:{rg_cmd}",
             "--bind",
-            'start:reload:echo "Type to search..."',
+            f"change:reload:sleep 0.1; {rg_cmd}",
             "--bind",
             f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
             "--bind",
             f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
             "--bind",
-            f"{self.KEYBINDINGS['list_up']}:up",
+            f"{self.KEYBINDINGS['toggle_mode_rg_fzf']}:{switch_mode}",
             "--bind",
-            f"{self.KEYBINDINGS['list_down']}:down",
+            f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
-            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            f"{self.KEYBINDINGS['list_down']}:half-page-down",
             "--bind",
-            f"{self.KEYBINDINGS['preview_down']}:preview-down",
+            f"{self.KEYBINDINGS['preview_up']}:preview-half-page-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
+            "--delimiter",
+            ":",
             "--preview",
             preview_cmd,
             "--preview-window",
@@ -225,9 +214,9 @@ class FuzzyFinder:
             "--layout=reverse",
             "--border",
             "--prompt",
-            "Grep> ",
+            "1. ripgrep >",
             "--header",
-            f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Toggle Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Toggle Hidden | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
+            f"{self.KEYBINDINGS['toggle_mode_rg_fzf'].upper()}: Toggle rg/fzf | {self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
             "--expect",
             f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
         ]
@@ -236,34 +225,33 @@ class FuzzyFinder:
             fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            if fzf_process.returncode == 0 and output:
+            # Handle expect keys even when fzf exits with non-zero
+            if output:
                 lines = output.decode("utf-8").splitlines()
-                if not lines:
-                    return "exit", None
+                if lines:
+                    key = lines[0]
+                    selection = lines[1] if len(lines) > 1 else None
 
-                key = lines[0]
-                selection = lines[1] if len(lines) > 1 else None
-
-                if key == self.KEYBINDINGS["switch_files"]:
-                    return "switch", "files"
-                elif key == self.KEYBINDINGS["switch_commits"]:
-                    return "switch", "commits"
-                elif key == self.KEYBINDINGS["switch_status"]:
-                    return "switch", "status"
-                elif selection:
-                    parts = selection.split(":")
-                    if len(parts) >= 2:
-                        return "open", (parts[0], parts[1])
+                    if key == self.KEYBINDINGS["switch_files"]:
+                        return "switch", "files"
+                    elif key == self.KEYBINDINGS["switch_commits"]:
+                        return "switch", "commits"
+                    elif key == self.KEYBINDINGS["switch_status"]:
+                        return "switch", "status"
+                    elif selection and fzf_process.returncode == 0:
+                        parts = selection.split(":")
+                        if len(parts) >= 2:
+                            return "open", (parts[0], parts[1])
 
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            if os.path.exists(state_hidden):
-                os.remove(state_hidden)
-            if os.path.exists(state_no_ignore):
-                os.remove(state_no_ignore)
+            # Clean up temp files
+            for f in [rg_query_file, fzf_query_file]:
+                if os.path.exists(f):
+                    os.remove(f)
 
         return "exit", None
 
@@ -290,13 +278,15 @@ class FuzzyFinder:
             "--prompt",
             "Commits> ",
             "--bind",
-            f"{self.KEYBINDINGS['list_up']}:up",
+            f"start:reload:{git_cmd}",
             "--bind",
-            f"{self.KEYBINDINGS['list_down']}:down",
+            f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
-            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            f"{self.KEYBINDINGS['list_down']}:half-page-down",
             "--bind",
-            f"{self.KEYBINDINGS['preview_down']}:preview-down",
+            f"{self.KEYBINDINGS['preview_up']}:preview-half-page-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
             "--header",
             f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_status'].upper()}: Status | Enter: Copy Hash",
             "--expect",
@@ -304,32 +294,26 @@ class FuzzyFinder:
         ]
 
         try:
-            git_process = subprocess.Popen(git_cmd, shell=True, stdout=subprocess.PIPE)
-            fzf_process = subprocess.Popen(
-                fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE
-            )
-            git_process.stdout.close()
-
+            fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            if fzf_process.returncode == 0 and output:
+            # Handle expect keys even when fzf exits with non-zero
+            if output:
                 lines = output.decode("utf-8").splitlines()
-                if not lines:
-                    return "exit", None
+                if lines:
+                    key = lines[0]
+                    selection = lines[1] if len(lines) > 1 else None
 
-                key = lines[0]
-                selection = lines[1] if len(lines) > 1 else None
-
-                if key == self.KEYBINDINGS["switch_files"]:
-                    return "switch", "files"
-                elif key == self.KEYBINDINGS["switch_grep"]:
-                    return "switch", "grep"
-                elif key == self.KEYBINDINGS["switch_status"]:
-                    return "switch", "status"
-                elif selection:
-                    # Extract hash (first word)
-                    commit_hash = selection.split()[0]
-                    return "copy", commit_hash
+                    if key == self.KEYBINDINGS["switch_files"]:
+                        return "switch", "files"
+                    elif key == self.KEYBINDINGS["switch_grep"]:
+                        return "switch", "grep"
+                    elif key == self.KEYBINDINGS["switch_status"]:
+                        return "switch", "status"
+                    elif selection and fzf_process.returncode == 0:
+                        # Extract hash (first word)
+                        commit_hash = selection.split()[0]
+                        return "copy", commit_hash
 
         except KeyboardInterrupt:
             pass
@@ -344,15 +328,9 @@ class FuzzyFinder:
         Returns: (action, data)
         """
         # Git status command
-        # -s: short format
         git_cmd = "git status -s"
 
-        # Preview command
-        # We need to extract filename from status line.
-        # Status line: " M file.py" or "?? file.py"
-        # {2} usually works if there are 2 columns.
-        # But sometimes filenames have spaces.
-        # Let's try to use {2..}
+        # Preview command - extract filename from status line
         preview_cmd = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2> /dev/null"
 
         fzf_cmd = [
@@ -367,13 +345,15 @@ class FuzzyFinder:
             "--prompt",
             "Status> ",
             "--bind",
-            f"{self.KEYBINDINGS['list_up']}:up",
+            f"start:reload:{git_cmd}",
             "--bind",
-            f"{self.KEYBINDINGS['list_down']}:down",
+            f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
-            f"{self.KEYBINDINGS['preview_up']}:preview-up",
+            f"{self.KEYBINDINGS['list_down']}:half-page-down",
             "--bind",
-            f"{self.KEYBINDINGS['preview_down']}:preview-down",
+            f"{self.KEYBINDINGS['preview_up']}:preview-half-page-up",
+            "--bind",
+            f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
             "--header",
             f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits",
             "--expect",
@@ -381,38 +361,28 @@ class FuzzyFinder:
         ]
 
         try:
-            git_process = subprocess.Popen(git_cmd, shell=True, stdout=subprocess.PIPE)
-            fzf_process = subprocess.Popen(
-                fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE
-            )
-            git_process.stdout.close()
-
+            fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            if fzf_process.returncode == 0 and output:
+            # Handle expect keys even when fzf exits with non-zero
+            if output:
                 lines = output.decode("utf-8").splitlines()
-                if not lines:
-                    return "exit", None
+                if lines:
+                    key = lines[0]
+                    selection = lines[1] if len(lines) > 1 else None
 
-                key = lines[0]
-                selection = lines[1] if len(lines) > 1 else None
-
-                if key == self.KEYBINDINGS["switch_files"]:
-                    return "switch", "files"
-                elif key == self.KEYBINDINGS["switch_grep"]:
-                    return "switch", "grep"
-                elif key == self.KEYBINDINGS["switch_commits"]:
-                    return "switch", "commits"
-                elif selection:
-                    # Extract filename.
-                    # Format: XY Path
-                    # XY is 2 chars, then space, then path.
-                    # But sometimes there are arrows for renames.
-                    # For simplicity, let's take the last part or everything after index 3.
-                    parts = selection.strip().split()
-                    if len(parts) >= 2:
-                        filename = parts[-1]  # Simple case
-                        return "open", filename
+                    if key == self.KEYBINDINGS["switch_files"]:
+                        return "switch", "files"
+                    elif key == self.KEYBINDINGS["switch_grep"]:
+                        return "switch", "grep"
+                    elif key == self.KEYBINDINGS["switch_commits"]:
+                        return "switch", "commits"
+                    elif selection and fzf_process.returncode == 0:
+                        # Extract filename from status line (XY Path)
+                        parts = selection.strip().split()
+                        if len(parts) >= 2:
+                            filename = parts[-1]
+                            return "open", filename
 
         except KeyboardInterrupt:
             pass
