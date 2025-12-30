@@ -10,15 +10,16 @@ class FuzzyFinder:
     KEYBINDINGS = {
         "toggle_ignore": "alt-i",
         "toggle_hidden": "alt-u",
-        "switch_files": "ctrl-f",
-        "switch_grep": "ctrl-g",
-        "switch_commits": "ctrl-h",
-        "switch_status": "ctrl-s",
+        "switch_files": "ctrl-j",
+        "switch_grep": "ctrl-k",
+        "switch_commits": "ctrl-g",
+        "switch_status": "ctrl-h",
         "list_up": "ctrl-u",
         "list_down": "ctrl-d",
         "preview_up": "ctrl-b",
         "preview_down": "ctrl-f",
         "toggle_mode_rg_fzf": "ctrl-t",
+        "clear_query": "ctrl-l",
     }
 
     def __init__(self):
@@ -49,33 +50,35 @@ class FuzzyFinder:
         Search files in the current repository.
         Returns: (action, data)
         """
-        # Preview command (suppress stderr for invalid digits bug)
         preview_cmd = (
-            "bat --style=numbers --color=always --line-range :500 {} 2> /dev/null"
+            "bat --style=numbers --color=always --line-range :500 {} 2>/dev/null"
         )
 
-        # Use prompt to store state: [H][I] = Hidden, Ignore flags
-        # Default: Show hidden, Respect gitignore
-        # Prompt format: "Files [H]> " means hidden enabled, ignore respected
-        # "Files [H][I]> " means hidden enabled, no-ignore enabled
+        # rg commands for each state
+        rg_base = "rg --files"
+        rg_h = "rg --files --hidden"
+        rg_i = "rg --files --no-ignore"
+        rg_hi = "rg --files --hidden --no-ignore"
 
-        # Build rg command based on prompt state
-        rg_cmd_template = """
-            FLAGS="--glob=!.git"
-            [[ "$FZF_PROMPT" == *"[H]"* ]] && FLAGS="$FLAGS --hidden"
-            [[ "$FZF_PROMPT" == *"[I]"* ]] && FLAGS="$FLAGS --no-ignore"
-            rg --files $FLAGS
-        """
+        # Toggle hidden: H> <-> > or HI> <-> I>
+        toggle_hidden_cmd = (
+            "case $FZF_PROMPT in "
+            f"*HI*) echo 'change-prompt(Files I>)+reload({rg_i})';; "
+            f"*H*) echo 'change-prompt(Files >)+reload({rg_base})';; "
+            f"*I*) echo 'change-prompt(Files HI>)+reload({rg_hi})';; "
+            f"*) echo 'change-prompt(Files H>)+reload({rg_h})';; "
+            "esac"
+        )
 
-        # Toggle hidden using transform action
-        toggle_hidden = f"""transform:[[ "$FZF_PROMPT" == *"[H]"* ]] && \
-            echo "change-prompt(Files> )+reload({rg_cmd_template})" || \
-            echo "change-prompt(Files [H]> )+reload({rg_cmd_template})" """
-
-        # Toggle ignore using transform action
-        toggle_ignore = f"""transform:[[ "$FZF_PROMPT" == *"[I]"* ]] && \
-            echo "change-prompt(${{FZF_PROMPT/\\[I\\]/}})+reload({rg_cmd_template})" || \
-            echo "change-prompt(${{FZF_PROMPT/> /[I]> }})+reload({rg_cmd_template})" """
+        # Toggle ignore: I> <-> > or HI> <-> H>
+        toggle_ignore_cmd = (
+            "case $FZF_PROMPT in "
+            f"*HI*) echo 'change-prompt(Files H>)+reload({rg_h})';; "
+            f"*I*) echo 'change-prompt(Files >)+reload({rg_base})';; "
+            f"*H*) echo 'change-prompt(Files HI>)+reload({rg_hi})';; "
+            f"*) echo 'change-prompt(Files I>)+reload({rg_i})';; "
+            "esac"
+        )
 
         try:
             fzf_cmd = [
@@ -87,13 +90,15 @@ class FuzzyFinder:
                 "--layout=reverse",
                 "--border",
                 "--prompt",
-                "Files [H]> ",
+                "Files H>",
                 "--bind",
-                f"start:reload:{rg_cmd_template}",
+                f"start:reload:{rg_h}",
                 "--bind",
-                f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
+                f"{self.KEYBINDINGS['toggle_hidden']}:transform:{toggle_hidden_cmd}",
                 "--bind",
-                f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
+                f"{self.KEYBINDINGS['toggle_ignore']}:transform:{toggle_ignore_cmd}",
+                "--bind",
+                f"{self.KEYBINDINGS['clear_query']}:clear-query",
                 "--bind",
                 f"{self.KEYBINDINGS['list_up']}:half-page-up",
                 "--bind",
@@ -103,7 +108,7 @@ class FuzzyFinder:
                 "--bind",
                 f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
                 "--header",
-                f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Toggle Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Toggle Hidden | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
+                f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden | {self.KEYBINDINGS['clear_query'].upper()}: Clear | {self.KEYBINDINGS['switch_grep'].upper()}: Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
                 "--expect",
                 f"{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
             ]
@@ -111,7 +116,6 @@ class FuzzyFinder:
             fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            # Handle expect keys even when fzf exits with non-zero (e.g., no selection)
             if output:
                 lines = output.decode("utf-8").splitlines()
                 if lines:
@@ -149,35 +153,44 @@ class FuzzyFinder:
         fzf_query_file = tf.name
         tf.close()
 
-        # Use prompt to store state for hidden/ignore
-        # Prompt format: "1. ripgrep [H]> " = hidden enabled in ripgrep mode
         rg_prefix = "rg --column --line-number --no-heading --color=always --smart-case"
 
-        # Build rg command based on prompt state
-        rg_cmd = f"""
-            FLAGS=""
-            [[ "$FZF_PROMPT" == *"[H]"* ]] && FLAGS="$FLAGS --hidden"
-            [[ "$FZF_PROMPT" == *"[I]"* ]] && FLAGS="$FLAGS --no-ignore"
-            {rg_prefix} $FLAGS {{q}} || true
-        """
+        # rg commands for each state (with {q} placeholder for query)
+        rg_base = f"{rg_prefix} {{q}} || true"
+        rg_h = f"{rg_prefix} --hidden {{q}} || true"
+        rg_i = f"{rg_prefix} --no-ignore {{q}} || true"
+        rg_hi = f"{rg_prefix} --hidden --no-ignore {{q}} || true"
 
-        # Preview command using delimiter to extract file and line
         preview_cmd = "bat --color=always --highlight-line {2} {1} 2>/dev/null"
 
-        # Toggle hidden using transform
-        toggle_hidden = f"""transform:[[ "$FZF_PROMPT" == *"[H]"* ]] && \
-            echo "change-prompt(${{FZF_PROMPT/\\[H\\]/}})+reload({rg_cmd})" || \
-            echo "change-prompt(${{FZF_PROMPT/ >/ [H]>}})+reload({rg_cmd})" """
+        # Toggle hidden: rgH> <-> rg>, rgHI> <-> rgI>
+        toggle_hidden_cmd = (
+            "case $FZF_PROMPT in "
+            f"*HI*) echo 'change-prompt(rgI>)+reload({rg_i})';; "
+            f"*H*) echo 'change-prompt(rg>)+reload({rg_base})';; "
+            f"*I*) echo 'change-prompt(rgHI>)+reload({rg_hi})';; "
+            f"*rg*) echo 'change-prompt(rgH>)+reload({rg_h})';; "
+            f"*) echo 'change-prompt(fzfH>)';; "
+            "esac"
+        )
 
-        # Toggle ignore using transform
-        toggle_ignore = f"""transform:[[ "$FZF_PROMPT" == *"[I]"* ]] && \
-            echo "change-prompt(${{FZF_PROMPT/\\[I\\]/}})+reload({rg_cmd})" || \
-            echo "change-prompt(${{FZF_PROMPT/ >/ [I]>}})+reload({rg_cmd})" """
+        # Toggle ignore: rgI> <-> rg>, rgHI> <-> rgH>
+        toggle_ignore_cmd = (
+            "case $FZF_PROMPT in "
+            f"*HI*) echo 'change-prompt(rgH>)+reload({rg_h})';; "
+            f"*I*) echo 'change-prompt(rg>)+reload({rg_base})';; "
+            f"*H*) echo 'change-prompt(rgHI>)+reload({rg_hi})';; "
+            f"*rg*) echo 'change-prompt(rgI>)+reload({rg_i})';; "
+            f"*) echo 'change-prompt(fzfI>)';; "
+            "esac"
+        )
 
-        # Switch between ripgrep mode and fzf mode using transform
-        switch_mode = f"""transform:[[ ! "$FZF_PROMPT" =~ ripgrep ]] && \
-            echo "rebind(change)+change-prompt(1. ripgrep >)+disable-search+transform-query:echo {{q}} > {fzf_query_file}; cat {rg_query_file}" || \
-            echo "unbind(change)+change-prompt(2. fzf >)+enable-search+transform-query:echo {{q}} > {rg_query_file}; cat {fzf_query_file}" """
+        # Switch between ripgrep mode and fzf mode
+        switch_mode_cmd = (
+            f"[[ $FZF_PROMPT == *rg* ]] && "
+            f"echo 'unbind(change)+change-prompt(fzf>)+enable-search+transform-query:echo {{q}} > {rg_query_file}; cat {fzf_query_file}' || "
+            f"echo 'rebind(change)+change-prompt(rgH>)+disable-search+transform-query:echo {{q}} > {fzf_query_file}; cat {rg_query_file}'"
+        )
 
         fzf_cmd = [
             "fzf",
@@ -186,15 +199,17 @@ class FuzzyFinder:
             "--query",
             "",
             "--bind",
-            f"start:reload:{rg_cmd}",
+            f"start:reload:{rg_h}",
             "--bind",
-            f"change:reload:sleep 0.1; {rg_cmd}",
+            f"change:reload:sleep 0.1; {rg_h}",
             "--bind",
-            f"{self.KEYBINDINGS['toggle_ignore']}:{toggle_ignore}",
+            f"{self.KEYBINDINGS['toggle_hidden']}:transform:{toggle_hidden_cmd}",
             "--bind",
-            f"{self.KEYBINDINGS['toggle_hidden']}:{toggle_hidden}",
+            f"{self.KEYBINDINGS['toggle_ignore']}:transform:{toggle_ignore_cmd}",
             "--bind",
-            f"{self.KEYBINDINGS['toggle_mode_rg_fzf']}:{switch_mode}",
+            f"{self.KEYBINDINGS['toggle_mode_rg_fzf']}:transform:{switch_mode_cmd}",
+            "--bind",
+            f"{self.KEYBINDINGS['clear_query']}:clear-query",
             "--bind",
             f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
@@ -214,9 +229,9 @@ class FuzzyFinder:
             "--layout=reverse",
             "--border",
             "--prompt",
-            "1. ripgrep >",
+            "rgH>",
             "--header",
-            f"{self.KEYBINDINGS['toggle_mode_rg_fzf'].upper()}: Toggle rg/fzf | {self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
+            f"{self.KEYBINDINGS['toggle_mode_rg_fzf'].upper()}: rg/fzf | {self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore | {self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden | {self.KEYBINDINGS['clear_query'].upper()}: Clear | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_commits'].upper()}: Commits | {self.KEYBINDINGS['switch_status'].upper()}: Status",
             "--expect",
             f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_commits']},{self.KEYBINDINGS['switch_status']}",
         ]
@@ -225,7 +240,6 @@ class FuzzyFinder:
             fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            # Handle expect keys even when fzf exits with non-zero
             if output:
                 lines = output.decode("utf-8").splitlines()
                 if lines:
@@ -248,7 +262,6 @@ class FuzzyFinder:
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            # Clean up temp files
             for f in [rg_query_file, fzf_query_file]:
                 if os.path.exists(f):
                     os.remove(f)
@@ -260,11 +273,8 @@ class FuzzyFinder:
         Search git commits.
         Returns: (action, data)
         """
-        # Git log command
         git_cmd = "git log --oneline --color=always"
-
-        # Preview command
-        preview_cmd = "git show {1} --color=always | bat --color=always --style=numbers 2> /dev/null"
+        preview_cmd = "git show {1} --color=always | bat --color=always --style=numbers 2>/dev/null"
 
         fzf_cmd = [
             "fzf",
@@ -276,9 +286,11 @@ class FuzzyFinder:
             "--layout=reverse",
             "--border",
             "--prompt",
-            "Commits> ",
+            "Commits>",
             "--bind",
             f"start:reload:{git_cmd}",
+            "--bind",
+            f"{self.KEYBINDINGS['clear_query']}:clear-query",
             "--bind",
             f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
@@ -288,7 +300,7 @@ class FuzzyFinder:
             "--bind",
             f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
             "--header",
-            f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_status'].upper()}: Status | Enter: Copy Hash",
+            f"{self.KEYBINDINGS['clear_query'].upper()}: Clear | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Grep | {self.KEYBINDINGS['switch_status'].upper()}: Status | Enter: Copy Hash",
             "--expect",
             f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_status']}",
         ]
@@ -297,7 +309,6 @@ class FuzzyFinder:
             fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
 
-            # Handle expect keys even when fzf exits with non-zero
             if output:
                 lines = output.decode("utf-8").splitlines()
                 if lines:
@@ -311,7 +322,6 @@ class FuzzyFinder:
                     elif key == self.KEYBINDINGS["switch_status"]:
                         return "switch", "status"
                     elif selection and fzf_process.returncode == 0:
-                        # Extract hash (first word)
                         commit_hash = selection.split()[0]
                         return "copy", commit_hash
 
@@ -327,11 +337,8 @@ class FuzzyFinder:
         Search changed files (git status).
         Returns: (action, data)
         """
-        # Git status command
         git_cmd = "git status -s"
-
-        # Preview command - extract filename from status line
-        preview_cmd = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2> /dev/null"
+        preview_cmd = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2>/dev/null"
 
         fzf_cmd = [
             "fzf",
@@ -343,9 +350,11 @@ class FuzzyFinder:
             "--layout=reverse",
             "--border",
             "--prompt",
-            "Status> ",
+            "Status>",
             "--bind",
             f"start:reload:{git_cmd}",
+            "--bind",
+            f"{self.KEYBINDINGS['clear_query']}:clear-query",
             "--bind",
             f"{self.KEYBINDINGS['list_up']}:half-page-up",
             "--bind",
@@ -355,7 +364,7 @@ class FuzzyFinder:
             "--bind",
             f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
             "--header",
-            f"{self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Live Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits",
+            f"{self.KEYBINDINGS['clear_query'].upper()}: Clear | {self.KEYBINDINGS['switch_files'].upper()}: Files | {self.KEYBINDINGS['switch_grep'].upper()}: Grep | {self.KEYBINDINGS['switch_commits'].upper()}: Commits",
             "--expect",
             f"{self.KEYBINDINGS['switch_files']},{self.KEYBINDINGS['switch_grep']},{self.KEYBINDINGS['switch_commits']}",
         ]

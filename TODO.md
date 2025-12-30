@@ -26,6 +26,7 @@
 - [x] Change keymaps to scroll list up/down half screen instead of list up/down. (Ctrl+U/Ctrl+D)
 - [x] Change keymaps to scroll preview up/down half screen instead of preview up/down. (Ctrl+B/Ctrl+F)
 - [x] Try to use better way to switch ignore/hidden mode.
+- [x] Add a keybinding to clear the query input.
 
 ## Bugs to Fix
 - [x] Bat reports "invalid digits found in string" in grep mode.
