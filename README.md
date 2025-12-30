@@ -31,6 +31,7 @@ Run the script directly:
 
 - `files` (default): Search for files by name.
 - `grep`: Search for text within files.
+- `commits`: Search git commits.
 
 ### Examples
 
@@ -46,16 +47,36 @@ Search within files:
 ./fuzzy_finder.py grep
 ```
 
+Search commits:
+```bash
+./fuzzy_finder.py commits
+```
+
 ### Key Bindings
 
 | Mode | Key | Action |
 |------|-----|--------|
 | Find Files | `CTRL-I` | Include ignored files (reload) |
 | Find Files | `CTRL-X` | Exclude ignored files (reload) |
+| Find Files | `CTRL-G` | Switch to Live Grep |
+| Find Files | `CTRL-H` | Switch to Commits |
 | Live Grep | `CTRL-I` | Toggle ignored files |
-| All | `Enter` | Open selected file |
+| Live Grep | `CTRL-F` | Switch to Find Files |
+| Live Grep | `CTRL-H` | Switch to Commits |
+| Commits | `CTRL-F` | Switch to Find Files |
+| Commits | `CTRL-G` | Switch to Live Grep |
+| Commits | `Enter` | Copy commit hash to clipboard |
+| All | `Enter` | Open selected file (Files/Grep) |
 | All | `Esc` | Cancel |
 
 ## Installation
 
 Simply copy `fuzzy_finder.py` to a directory in your PATH.
+
+### Auto-completion
+
+To enable bash completion, add the following to your `.bashrc`:
+
+```bash
+source <(/path/to/fuzzy_finder.py --completion)
+```
