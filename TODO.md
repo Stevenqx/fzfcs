@@ -24,3 +24,4 @@
 ## Bugs to Fix
 - [x] Bat reports "invalid digits found in string" in grep mode.
 - [x] Bat preview has low visibility for light background.
+- [x] Cannot open files or copy commit hash.

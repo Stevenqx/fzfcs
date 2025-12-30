@@ -37,18 +37,20 @@ class FuzzyFinder:
         """
         # State files
         import tempfile
+
         tf = tempfile.NamedTemporaryFile(delete=False)
         base_state = tf.name
         tf.close()
         os.remove(base_state)
-        
+
         state_hidden = base_state + "_hidden"
         state_no_ignore = base_state + "_no_ignore"
-        
+
         # Default: Show hidden (create file), Respect ignore (no file)
-        open(state_hidden, 'w').close()
-        if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
-        
+        open(state_hidden, "w").close()
+        if os.path.exists(state_no_ignore):
+            os.remove(state_no_ignore)
+
         # Base rg command parts
         # We construct the command dynamically based on state files
         rg_cmd = f"""
@@ -57,20 +59,22 @@ class FuzzyFinder:
             if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
             rg --files $FLAGS --glob '!.git'
         """
-        
+
         # Preview command (suppress stderr for invalid digits bug)
-        preview_cmd = "bat --style=numbers --color=always --line-range :500 {} 2> /dev/null"
-        
+        preview_cmd = (
+            "bat --style=numbers --color=always --line-range :500 {} 2> /dev/null"
+        )
+
         # Toggle commands
         toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({rg_cmd})"
         toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({rg_cmd})"
-        
+
         try:
             # Initial command
             # We need to run the shell command to get initial output
             # But subprocess.Popen needs a string for shell=True
             initial_cmd = f"bash -c '{rg_cmd}'"
-            
+
             fzf_cmd = [
                 "fzf",
                 "--preview",
@@ -90,21 +94,25 @@ class FuzzyFinder:
                 "--expect",
                 "ctrl-g,ctrl-h,ctrl-s",
             ]
-            
-            rg_process = subprocess.Popen(initial_cmd, shell=True, stdout=subprocess.PIPE)
-            fzf_process = subprocess.Popen(fzf_cmd, stdin=rg_process.stdout, stdout=subprocess.PIPE)
+
+            rg_process = subprocess.Popen(
+                initial_cmd, shell=True, stdout=subprocess.PIPE
+            )
+            fzf_process = subprocess.Popen(
+                fzf_cmd, stdin=rg_process.stdout, stdout=subprocess.PIPE
+            )
             rg_process.stdout.close()
-            
+
             output, _ = fzf_process.communicate()
-            
+
             if fzf_process.returncode == 0 and output:
-                lines = output.decode("utf-8").strip().split("\n")
+                lines = output.decode("utf-8").splitlines()
                 if not lines:
                     return "exit", None
-                
+
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
-                
+
                 if key == "ctrl-g":
                     return "switch", "grep"
                 elif key == "ctrl-h":
@@ -113,15 +121,17 @@ class FuzzyFinder:
                     return "switch", "status"
                 elif selection:
                     return "open", selection
-            
+
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            if os.path.exists(state_hidden): os.remove(state_hidden)
-            if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
-            
+            if os.path.exists(state_hidden):
+                os.remove(state_hidden)
+            if os.path.exists(state_no_ignore):
+                os.remove(state_no_ignore)
+
         return "exit", None
 
     def live_grep(self):
@@ -131,35 +141,40 @@ class FuzzyFinder:
         """
         # State files
         import tempfile
+
         tf = tempfile.NamedTemporaryFile(delete=False)
         base_state = tf.name
         tf.close()
         os.remove(base_state)
-        
+
         state_hidden = base_state + "_hidden"
         state_no_ignore = base_state + "_no_ignore"
-        
+
         # Default: Hide hidden (no file), Respect ignore (no file) - Standard grep behavior
         # But user might want to toggle hidden.
-        if os.path.exists(state_hidden): os.remove(state_hidden)
-        if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
+        if os.path.exists(state_hidden):
+            os.remove(state_hidden)
+        if os.path.exists(state_no_ignore):
+            os.remove(state_no_ignore)
 
         # Command to check state and run rg
         rg_cmd_template = "rg --column --line-number --no-heading --color=always --smart-case {flags} {{q}} || true"
-        
+
         shell_cmd = f"""
             FLAGS=""
             if [ -f {state_hidden} ]; then FLAGS="$FLAGS --hidden"; fi
             if [ -f {state_no_ignore} ]; then FLAGS="$FLAGS --no-ignore"; fi
             {rg_cmd_template.format(flags="$FLAGS")}
         """
-        
-        preview_cmd = "bat --style=numbers --color=always --highlight-line {2} {1} 2> /dev/null"
-        
+
+        preview_cmd = (
+            "bat --style=numbers --color=always --highlight-line {2} {1} 2> /dev/null"
+        )
+
         # Toggle commands
         toggle_hidden = f"execute(if [ -f {state_hidden} ]; then rm {state_hidden}; else touch {state_hidden}; fi)+reload({shell_cmd})"
         toggle_ignore = f"execute(if [ -f {state_no_ignore} ]; then rm {state_no_ignore}; else touch {state_no_ignore}; fi)+reload({shell_cmd})"
-        
+
         fzf_cmd = [
             "fzf",
             "--ansi",
@@ -187,19 +202,19 @@ class FuzzyFinder:
             "--expect",
             "ctrl-f,ctrl-h,ctrl-s",
         ]
-        
+
         try:
             fzf_process = subprocess.Popen(fzf_cmd, stdout=subprocess.PIPE)
             output, _ = fzf_process.communicate()
-            
+
             if fzf_process.returncode == 0 and output:
-                lines = output.decode("utf-8").strip().split("\n")
+                lines = output.decode("utf-8").splitlines()
                 if not lines:
                     return "exit", None
-                    
+
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
-                
+
                 if key == "ctrl-f":
                     return "switch", "files"
                 elif key == "ctrl-h":
@@ -210,15 +225,17 @@ class FuzzyFinder:
                     parts = selection.split(":")
                     if len(parts) >= 2:
                         return "open", (parts[0], parts[1])
-                    
+
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            if os.path.exists(state_hidden): os.remove(state_hidden)
-            if os.path.exists(state_no_ignore): os.remove(state_no_ignore)
-                
+            if os.path.exists(state_hidden):
+                os.remove(state_hidden)
+            if os.path.exists(state_no_ignore):
+                os.remove(state_no_ignore)
+
         return "exit", None
 
     def git_commits(self):
@@ -228,10 +245,10 @@ class FuzzyFinder:
         """
         # Git log command
         git_cmd = "git log --oneline --color=always"
-        
+
         # Preview command
         preview_cmd = "git show {1} --color=always | bat --color=always --style=numbers 2> /dev/null"
-        
+
         fzf_cmd = [
             "fzf",
             "--ansi",
@@ -248,22 +265,24 @@ class FuzzyFinder:
             "--expect",
             "ctrl-f,ctrl-g,ctrl-s",
         ]
-        
+
         try:
             git_process = subprocess.Popen(git_cmd, shell=True, stdout=subprocess.PIPE)
-            fzf_process = subprocess.Popen(fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE)
+            fzf_process = subprocess.Popen(
+                fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE
+            )
             git_process.stdout.close()
-            
+
             output, _ = fzf_process.communicate()
-            
+
             if fzf_process.returncode == 0 and output:
-                lines = output.decode("utf-8").strip().split("\n")
+                lines = output.decode("utf-8").splitlines()
                 if not lines:
                     return "exit", None
-                
+
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
-                
+
                 if key == "ctrl-f":
                     return "switch", "files"
                 elif key == "ctrl-g":
@@ -274,12 +293,12 @@ class FuzzyFinder:
                     # Extract hash (first word)
                     commit_hash = selection.split()[0]
                     return "copy", commit_hash
-                    
+
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
-            
+
         return "exit", None
 
     def git_status(self):
@@ -290,7 +309,7 @@ class FuzzyFinder:
         # Git status command
         # -s: short format
         git_cmd = "git status -s --color=always"
-        
+
         # Preview command
         # We need to extract filename from status line.
         # Status line: " M file.py" or "?? file.py"
@@ -298,7 +317,7 @@ class FuzzyFinder:
         # But sometimes filenames have spaces.
         # Let's try to use {2..}
         preview_cmd = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2> /dev/null"
-        
+
         fzf_cmd = [
             "fzf",
             "--ansi",
@@ -315,22 +334,24 @@ class FuzzyFinder:
             "--expect",
             "ctrl-f,ctrl-g,ctrl-h",
         ]
-        
+
         try:
             git_process = subprocess.Popen(git_cmd, shell=True, stdout=subprocess.PIPE)
-            fzf_process = subprocess.Popen(fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE)
+            fzf_process = subprocess.Popen(
+                fzf_cmd, stdin=git_process.stdout, stdout=subprocess.PIPE
+            )
             git_process.stdout.close()
-            
+
             output, _ = fzf_process.communicate()
-            
+
             if fzf_process.returncode == 0 and output:
-                lines = output.decode("utf-8").strip().split("\n")
+                lines = output.decode("utf-8").splitlines()
                 if not lines:
                     return "exit", None
-                
+
                 key = lines[0]
                 selection = lines[1] if len(lines) > 1 else None
-                
+
                 if key == "ctrl-f":
                     return "switch", "files"
                 elif key == "ctrl-g":
@@ -345,14 +366,14 @@ class FuzzyFinder:
                     # For simplicity, let's take the last part or everything after index 3.
                     parts = selection.strip().split()
                     if len(parts) >= 2:
-                        filename = parts[-1] # Simple case
+                        filename = parts[-1]  # Simple case
                         return "open", filename
-                    
+
         except KeyboardInterrupt:
             pass
         except Exception as e:
             print(f"Error: {e}")
-            
+
         return "exit", None
 
     def open_file(self, filename, line_num=None):
@@ -360,7 +381,7 @@ class FuzzyFinder:
         Open the selected file.
         """
         print(f"Opening: {filename}" + (f":{line_num}" if line_num else ""))
-        
+
         # Check for VSCode
         if os.environ.get("TERM_PROGRAM") == "vscode":
             cmd = [
@@ -434,7 +455,7 @@ _fuzzy_finder_zsh() {
             return
 
         current_mode = args.mode
-        
+
         while True:
             if current_mode == "files":
                 action, data = self.find_files()
@@ -446,7 +467,7 @@ _fuzzy_finder_zsh() {
                 action, data = self.git_status()
             else:
                 break
-                
+
             if action == "switch":
                 current_mode = data
             elif action == "open":
@@ -459,7 +480,9 @@ _fuzzy_finder_zsh() {
                 # Try to copy to clipboard (Linux/Mac)
                 try:
                     if shutil.which("xclip"):
-                        p = subprocess.Popen(["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE)
+                        p = subprocess.Popen(
+                            ["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE
+                        )
                         p.communicate(input=data.encode("utf-8"))
                         print(f"Copied {data} to clipboard (xclip)")
                     elif shutil.which("pbcopy"):
