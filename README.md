@@ -58,6 +58,8 @@ Ensure the following tools are installed and available in your PATH:
 | `Ctrl+B` | Scroll preview up (half page) |
 | `Ctrl+F` | Scroll preview down (half page) |
 | `Ctrl+L` | Clear query |
+| `Ctrl+P` | Previous history |
+| `Ctrl+N` | Next history |
 | `Enter` | Select item / Copy commit hash |
 | `Esc` | Cancel |
 
@@ -65,10 +67,8 @@ Ensure the following tools are installed and available in your PATH:
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+J` | Switch to Files mode |
-| `Ctrl+K` | Switch to Grep mode |
-| `Ctrl+G` | Switch to Commits mode |
-| `Ctrl+H` | Switch to Status mode |
+| `Ctrl+Space` | Open mode selection menu |
+| `Ctrl+Y` | Switch to last mode |
 
 ### Toggle Options (Files/Grep modes)
 
@@ -98,8 +98,6 @@ Edit the `KEYBINDINGS` dictionary at the top of the script to customize keys:
 KEYBINDINGS = {
     "toggle_ignore": "alt-i",
     "toggle_hidden": "alt-u",
-    "switch_files": "ctrl-j",
-    "switch_grep": "ctrl-k",
     # ... etc
 }
 ```

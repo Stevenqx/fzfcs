@@ -24,16 +24,16 @@ class FuzzyFinder:
     KEYBINDINGS = {
         "toggle_ignore": "alt-i",
         "toggle_hidden": "alt-u",
-        "switch_files": "ctrl-j",
-        "switch_grep": "ctrl-k",
-        "switch_commits": "ctrl-g",
-        "switch_status": "ctrl-h",
+        "switch_mode": "ctrl-space",
+        "switch_last": "ctrl-y",
         "list_up": "ctrl-u",
         "list_down": "ctrl-d",
         "preview_up": "ctrl-b",
         "preview_down": "ctrl-f",
         "toggle_mode_rg_fzf": "ctrl-t",
         "clear_query": "ctrl-l",
+        "history_prev": "ctrl-p",
+        "history_next": "ctrl-n",
     }
 
     # Common fzf options
@@ -44,11 +44,23 @@ class FuzzyFinder:
         "--border",
     ]
 
+    # History directory
+    HISTORY_DIR = os.path.expanduser("~/.local/share/fzfcs")
+
     def __init__(self):
         self._check_dependencies()
+        self._ensure_history_dir()
         self.workspace_root = self._find_workspace_root()
         if self.workspace_root:
             os.chdir(self.workspace_root)
+
+    def _ensure_history_dir(self):
+        """Create history directory if it doesn't exist."""
+        os.makedirs(self.HISTORY_DIR, exist_ok=True)
+
+    def _get_history_file(self, mode):
+        """Get history file path for a mode."""
+        return os.path.join(self.HISTORY_DIR, f"{mode}_history")
 
     def _check_dependencies(self):
         """Check if required tools are installed."""
@@ -81,6 +93,10 @@ class FuzzyFinder:
             f"{self.KEYBINDINGS['preview_up']}:preview-half-page-up",
             "--bind",
             f"{self.KEYBINDINGS['preview_down']}:preview-half-page-down",
+            "--bind",
+            f"{self.KEYBINDINGS['history_prev']}:prev-history",
+            "--bind",
+            f"{self.KEYBINDINGS['history_next']}:next-history",
         ]
 
     def _run_fzf(self, fzf_cmd, expect_keys):
@@ -158,9 +174,8 @@ class FuzzyFinder:
         )
 
         expect_keys = {
-            "grep": self.KEYBINDINGS["switch_grep"],
-            "commits": self.KEYBINDINGS["switch_commits"],
-            "status": self.KEYBINDINGS["switch_status"],
+            "select": self.KEYBINDINGS["switch_mode"],
+            "last": self.KEYBINDINGS["switch_last"],
         }
 
         header = " | ".join(
@@ -168,9 +183,8 @@ class FuzzyFinder:
                 f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore",
                 f"{self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden",
                 f"{self.KEYBINDINGS['clear_query'].upper()}: Clear",
-                f"{self.KEYBINDINGS['switch_grep'].upper()}: Grep",
-                f"{self.KEYBINDINGS['switch_commits'].upper()}: Commits",
-                f"{self.KEYBINDINGS['switch_status'].upper()}: Status",
+                f"{self.KEYBINDINGS['switch_mode'].upper()}: Modes",
+                f"{self.KEYBINDINGS['switch_last'].upper()}: Last",
             ]
         )
 
@@ -179,6 +193,8 @@ class FuzzyFinder:
             "--preview",
             preview,
             *self.FZF_COMMON_OPTS,
+            "--history",
+            self._get_history_file("files"),
             "--prompt",
             "Files H>",
             "--bind",
@@ -249,9 +265,8 @@ class FuzzyFinder:
             )
 
             expect_keys = {
-                "files": self.KEYBINDINGS["switch_files"],
-                "commits": self.KEYBINDINGS["switch_commits"],
-                "status": self.KEYBINDINGS["switch_status"],
+                "select": self.KEYBINDINGS["switch_mode"],
+                "last": self.KEYBINDINGS["switch_last"],
             }
 
             header = " | ".join(
@@ -260,9 +275,8 @@ class FuzzyFinder:
                     f"{self.KEYBINDINGS['toggle_ignore'].upper()}: Ignore",
                     f"{self.KEYBINDINGS['toggle_hidden'].upper()}: Hidden",
                     f"{self.KEYBINDINGS['clear_query'].upper()}: Clear",
-                    f"{self.KEYBINDINGS['switch_files'].upper()}: Files",
-                    f"{self.KEYBINDINGS['switch_commits'].upper()}: Commits",
-                    f"{self.KEYBINDINGS['switch_status'].upper()}: Status",
+                    f"{self.KEYBINDINGS['switch_mode'].upper()}: Modes",
+                    f"{self.KEYBINDINGS['switch_last'].upper()}: Last",
                 ]
             )
 
@@ -279,6 +293,8 @@ class FuzzyFinder:
                 "--preview-window",
                 "up,60%,border-bottom,+{2}+3/3,~3",
                 *self.FZF_COMMON_OPTS,
+                "--history",
+                self._get_history_file("grep"),
                 "--prompt",
                 "rgH>",
                 "--bind",
@@ -316,17 +332,15 @@ class FuzzyFinder:
         preview = "git show {1} --color=always | bat --color=always --style=numbers 2>/dev/null"
 
         expect_keys = {
-            "files": self.KEYBINDINGS["switch_files"],
-            "grep": self.KEYBINDINGS["switch_grep"],
-            "status": self.KEYBINDINGS["switch_status"],
+            "select": self.KEYBINDINGS["switch_mode"],
+            "last": self.KEYBINDINGS["switch_last"],
         }
 
         header = " | ".join(
             [
                 f"{self.KEYBINDINGS['clear_query'].upper()}: Clear",
-                f"{self.KEYBINDINGS['switch_files'].upper()}: Files",
-                f"{self.KEYBINDINGS['switch_grep'].upper()}: Grep",
-                f"{self.KEYBINDINGS['switch_status'].upper()}: Status",
+                f"{self.KEYBINDINGS['switch_mode'].upper()}: Modes",
+                f"{self.KEYBINDINGS['switch_last'].upper()}: Last",
                 "Enter: Copy Hash",
             ]
         )
@@ -337,6 +351,8 @@ class FuzzyFinder:
             "--preview",
             preview,
             *self.FZF_COMMON_OPTS,
+            "--history",
+            self._get_history_file("commits"),
             "--prompt",
             "Commits>",
             "--bind",
@@ -359,17 +375,15 @@ class FuzzyFinder:
         preview = "git diff --color=always -- {2..} | bat --color=always --style=numbers 2>/dev/null"
 
         expect_keys = {
-            "files": self.KEYBINDINGS["switch_files"],
-            "grep": self.KEYBINDINGS["switch_grep"],
-            "commits": self.KEYBINDINGS["switch_commits"],
+            "select": self.KEYBINDINGS["switch_mode"],
+            "last": self.KEYBINDINGS["switch_last"],
         }
 
         header = " | ".join(
             [
                 f"{self.KEYBINDINGS['clear_query'].upper()}: Clear",
-                f"{self.KEYBINDINGS['switch_files'].upper()}: Files",
-                f"{self.KEYBINDINGS['switch_grep'].upper()}: Grep",
-                f"{self.KEYBINDINGS['switch_commits'].upper()}: Commits",
+                f"{self.KEYBINDINGS['switch_mode'].upper()}: Modes",
+                f"{self.KEYBINDINGS['switch_last'].upper()}: Last",
             ]
         )
 
@@ -379,6 +393,8 @@ class FuzzyFinder:
             "--preview",
             preview,
             *self.FZF_COMMON_OPTS,
+            "--history",
+            self._get_history_file("status"),
             "--prompt",
             "Status>",
             "--bind",
@@ -450,9 +466,57 @@ compdef _fuzzy_finder_zsh fuzzy_finder.py
 # complete -c fuzzy_finder.py -f -a "files grep commits status"
 """)
 
+    def select_mode(self, current_mode):
+        """Show interactive mode selection screen."""
+        modes = [
+            ("1. Files", "files", "Search files by name"),
+            ("2. Grep", "grep", "Search text within files"),
+            ("3. Commits", "commits", "Browse git commits"),
+            ("4. Status", "status", "Browse changed files"),
+        ]
+
+        # Build input for fzf
+        items = "\n".join(f"{name}\t{desc}" for name, _, desc in modes)
+
+        fzf_cmd = [
+            "fzf",
+            "--height",
+            "40%",
+            "--layout=reverse",
+            "--border",
+            "--prompt",
+            "Select Mode> ",
+            "--header",
+            "Choose a mode (or press Esc to cancel)",
+            "--with-nth",
+            "1",
+            "--delimiter",
+            "\t",
+            "--ansi",
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                fzf_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
+            output, _ = proc.communicate(input=items.encode())
+
+            if proc.returncode == 0 and output:
+                selected = output.decode().strip().split("\t")[0]
+                for name, mode_key, _ in modes:
+                    if name == selected:
+                        return mode_key
+        except Exception:
+            pass
+
+        return None
+
     def run(self, initial_mode="files"):
         """Main loop to run the fuzzy finder."""
         mode = initial_mode
+        last_mode = None
         modes = {
             "files": self.find_files,
             "grep": self.live_grep,
@@ -464,7 +528,18 @@ compdef _fuzzy_finder_zsh fuzzy_finder.py
             action, data = modes[mode]()
 
             if action == "switch":
-                mode = data
+                if data == "select":
+                    # Show mode selection screen
+                    new_mode = self.select_mode(mode)
+                    if new_mode and new_mode != mode:
+                        last_mode = mode
+                        mode = new_mode
+                elif data == "last" and last_mode:
+                    # Switch to last mode
+                    mode, last_mode = last_mode, mode
+                else:
+                    last_mode = mode
+                    mode = data
             elif action == "open":
                 if isinstance(data, tuple):
                     self.open_file(data[0], data[1])
